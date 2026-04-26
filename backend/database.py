@@ -1,6 +1,14 @@
+import os
+from dotenv import load_dotenv
 from pymongo import MongoClient
 
-client = MongoClient("mongodb+srv://admin:admin123@cluster0.ulh8nad.mongodb.net/?appName=Cluster0")
+# Load environment variables
+load_dotenv()
+
+# Get MongoDB URI safely
+MONGO_URI = os.getenv("MONGO_URI")
+
+client = MongoClient(MONGO_URI)
 
 db = client["resumeDB"]
 collection = db["candidates"]
