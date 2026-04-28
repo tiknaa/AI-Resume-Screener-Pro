@@ -1,16 +1,17 @@
 import UploadForm from "./components/UploadForm";
 import Dashboard from "./components/Dashboard";
-import { useState } from "react";
 
 function App() {
-  const [refresh, setRefresh] = useState(false);
 
   return (
-    <div style={{ padding: "20px" }}>
-      <h1>AI Resume Screening System</h1>
+    <div className="min-h-screen bg-gray-100 p-6">
+      <h1 className="text-3xl font-bold mb-6 text-gray-800">
+        AI Resume Screening Dashboard
+      </h1>
 
-      <UploadForm refresh={() => setRefresh(!refresh)} />
-      <Dashboard refresh={refresh} />
+      <UploadForm />
+
+      <Dashboard />
     </div>
   );
 }
