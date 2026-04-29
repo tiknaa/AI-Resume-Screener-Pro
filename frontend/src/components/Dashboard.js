@@ -1,10 +1,6 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip,
-  CartesianGrid, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend
-} from "recharts";
+
 
 function Dashboard({ refresh }) {
   const [data, setData] = useState([]);
@@ -14,7 +10,11 @@ function Dashboard({ refresh }) {
   const [minScore, setMinScore] = useState(0);
   const [analytics, setAnalytics] = useState(null);
   const [showShortlisted, setShowShortlisted] = useState(false);
-  const [showCharts, setShowCharts] = useState(false);
+
+
+  useEffect(() => {
+    fetchData();
+  }, [refresh]);
 
   const fetchData = async () => {
     try {
@@ -28,289 +28,216 @@ function Dashboard({ refresh }) {
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, [refresh]);
-
-  const handleShortlist = async (id) => {
-    try {
-      const res = await axios.put(`http://127.0.0.1:8000/shortlist/${id}`);
-
-      setData((prev) =>
-        prev.map((c) =>
-          c._id === id ? { ...c, shortlisted: res.data.shortlisted } : c
-        )
-      );
-    } catch (err) {
-      console.error(err);
-    }
+  const handleSearch = () => {
+    setSearch(searchInput);
+    setMinScore(minScoreInput);
   };
 
   const handleDeleteAll = async () => {
     if (!window.confirm("Delete all results?")) return;
-
-    try {
-      await axios.delete("http://127.0.0.1:8000/delete_all");
-      setData([]);
-      setAnalytics({ total: 0, avg_score: 0, top_score: 0 });
-    } catch (err) {
-      console.error(err);
-    }
+    await axios.delete("http://127.0.0.1:8000/delete_all");
+    fetchData();
   };
 
   const handleDeleteOne = async (id) => {
     if (!window.confirm("Delete this candidate?")) return;
-
-    try {
-      await axios.delete(`http://127.0.0.1:8000/delete/${id}`);
-      setData((prev) => prev.filter((c) => c._id !== id));
-
-      const analyticsRes = await axios.get("http://127.0.0.1:8000/analytics");
-      setAnalytics(analyticsRes.data);
-    } catch (err) {
-      console.error(err);
-    }
+    await axios.delete(`http://127.0.0.1:8000/delete/${id}`);
+    fetchData();
   };
 
-  const cardStyle = {
-    background: "#fff",
-    padding: "15px",
-    borderRadius: "10px",
-    boxShadow: "0 3px 10px rgba(0,0,0,0.1)",
-    flex: 1,
-    textAlign: "center"
+  const handleShortlist = async (id) => {
+    const res = await axios.put(`http://127.0.0.1:8000/shortlist/${id}`);
+    setData((prev) =>
+      prev.map((c) =>
+        c._id === id ? { ...c, shortlisted: res.data.shortlisted } : c
+      )
+    );
   };
 
-  // Charts
-  const chartData = data.map((c) => ({
-    name: c.filename,
-    score: c.score
-  }));
+  const handleExportCSV = () => {
+    const headers = ["Filename", "Score", "Skills"];
+    const rows = data.map((c) => [
+      c.filename,
+      c.score,
+      (c.skills || []).join(", ")
+    ]);
 
-  const skillCount = {};
-  data.forEach((c) => {
-    c.skills?.forEach((skill) => {
-      skillCount[skill] = (skillCount[skill] || 0) + 1;
-    });
-  });
+    const csv =
+      "data:text/csv;charset=utf-8," +
+      [headers, ...rows].map((e) => e.join(",")).join("\n");
 
-  const skillChartData = Object.keys(skillCount).map((skill) => ({
-    skill,
-    count: skillCount[skill]
-  }));
+    const link = document.createElement("a");
+    link.href = encodeURI(csv);
+    link.download = "report.csv";
+    link.click();
+  };
 
-  const scoreCategories = { High: 0, Medium: 0, Low: 0 };
-  data.forEach((c) => {
-    if (c.score > 70) scoreCategories.High++;
-    else if (c.score > 40) scoreCategories.Medium++;
-    else scoreCategories.Low++;
-  });
-
-  const pieData = [
-    { name: "High", value: scoreCategories.High },
-    { name: "Medium", value: scoreCategories.Medium },
-    { name: "Low", value: scoreCategories.Low }
-  ];
-
-  const COLORS = ["green", "orange", "red"];
-
+  // 🔍 FILTER LOGIC
   const filteredData = data
     .filter((c) =>
       c.filename.toLowerCase().includes(search.toLowerCase()) ||
-      (c.skills && c.skills.join(" ").toLowerCase().includes(search.toLowerCase()))
+      (c.skills || []).join(" ").toLowerCase().includes(search.toLowerCase())
     )
     .filter((c) => c.score >= minScore)
     .filter((c) => !showShortlisted || c.shortlisted);
 
-  const handleExportCSV = () => {
-  if (data.length === 0) {
-    alert("No data to export");
-    return;
-  }
-
-  const headers = ["Filename", "Score", "Skills", "Missing Skills", "Shortlisted"];
-
-  const rows = filteredData.map((c) => [
-    c.filename,
-    c.score,
-    (c.skills || []).join(", "),
-    (c.missing_skills || []).join(", "),
-    c.shortlisted ? "Yes" : "No"
-  ]);
-
-  const csvContent =
-    "data:text/csv;charset=utf-8," +
-    [headers, ...rows].map((e) => e.join(",")).join("\n");
-
-  const encodedUri = encodeURI(csvContent);
-
-  const link = document.createElement("a");
-  link.setAttribute("href", encodedUri);
-  link.setAttribute("download", "resume_report.csv");
-
-  document.body.appendChild(link);
-  link.click();
-};
-const handleSearch = () => {
-  setSearch(searchInput);
-  setMinScore(minScoreInput);
-};
 
   return (
-    <div style={{ marginTop: "20px" }}>
+    <div className="mt-6 text-gray-800 dark:text-gray-100">
 
-      <h2>🏆 Candidate Ranking</h2>
+      <h2 className="text-2xl font-bold mb-4">🏆 Candidate Ranking</h2>
 
-      {/* Search + Filter */}
-      <div style={{ marginBottom: "10px", display: "flex", gap: "10px" }}>
-        <b>Search:</b>
+      {/* SEARCH */}
+      <div className="flex flex-wrap gap-3 mb-4">
         <input
-          type="text"
-          placeholder="Search by name or skill"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          style={{ margin: "0 10px", padding: "5px" }}
+          placeholder="Search..."
+          className="border p-2 rounded bg-white dark:bg-gray-800 dark:border-gray-600"
         />
-
-        <b>Min Score:</b>
         <input
           type="number"
           value={minScoreInput}
           onChange={(e) => setMinScoreInput(Number(e.target.value))}
-          style={{ marginLeft: "10px", padding: "5px", width: "80px" }}
+          placeholder="Min Score"
+          className="border p-2 rounded bg-white dark:bg-gray-800 dark:border-gray-600"
         />
-
-        
+        <button
+          onClick={handleSearch}
+          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded"
+        >
+          🔍 Search
+        </button>
       </div>
 
-      {/* Buttons */}
-      <div style={{ marginBottom: "10px", display: "flex", gap: "10px" }}>
-        <button onClick={handleDeleteAll} style={{ marginRight: "10px" }}>
-          🗑 Delete All
-        </button>
-
-        <button
-        onClick={() => setShowCharts(!showCharts)}
-        style={{ marginLeft: "10px" }}
-      >
-        {showCharts ? "Hide Analytics 📊" : "Show Analytics 📊"}
-      </button>
-
-        <button onClick={() => setShowShortlisted(!showShortlisted)}>
-          {showShortlisted ? "Show All" : "Show Shortlisted ⭐"}
-        </button>
-        <button onClick={handleExportCSV}>
-        📄 Export CSV
-        </button>
+      {/* ACTION BUTTONS */}
+      <div className="flex flex-wrap gap-3 mb-4">
+        <button onClick={handleDeleteAll} className="bg-red-500 px-4 py-2 rounded text-white">🗑 Delete</button>
         
-        <button
-        onClick={handleSearch}
-        style={{
-          marginLeft: "10px",
-          padding: "5px 10px",
-          borderRadius: "5px",
-          cursor: "pointer"
-        }}
-      >
-        🔍 Search
-      </button>
-        
+        <button onClick={() => setShowShortlisted(!showShortlisted)} className="bg-yellow-400 px-4 py-2 rounded text-black">⭐ Shortlisted</button>
+        <button onClick={handleExportCSV} className="bg-green-500 px-4 py-2 rounded text-white">📄 Export</button>
       </div>
 
-
-      {showCharts && (
-      <>
-      {/* Charts */}
-      <h3>Score Distribution</h3>
-      <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="name" />
-          <YAxis />
-          <Tooltip />
-          <Bar dataKey="score" />
-        </BarChart>
-      </ResponsiveContainer>
-
-      <h3>Skill Frequency</h3>
-      <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={skillChartData}>
-          <XAxis dataKey="skill" />
-          <YAxis />
-          <Tooltip />
-          <Bar dataKey="count" />
-        </BarChart>
-      </ResponsiveContainer>
-
-      <h3>Candidate Distribution</h3>
-      <ResponsiveContainer width="100%" height={300}>
-        <PieChart>
-          <Pie data={pieData} dataKey="value" label>
-            {pieData.map((_, i) => (
-              <Cell key={i} fill={COLORS[i]} />
-            ))}
-          </Pie>
-          <Tooltip />
-          <Legend />
-        </PieChart>
-      </ResponsiveContainer>
-      </>
-      )}
-
-      {/* Analytics */}
+      {/* ANALYTICS CARDS */}
       {analytics && (
-        <div style={{ display: "flex", gap: "10px" }}>
-          <div style={cardStyle}>Total: {analytics.total}</div>
-          <div style={cardStyle}>Avg: {analytics.avg_score}%</div>
-          <div style={cardStyle}>Top: {analytics.top_score}%</div>
+        <div className="flex gap-4 mb-6">
+          <div className="bg-white dark:bg-gray-800 p-4 rounded shadow flex-1 text-center">
+            Total: {analytics.total}
+          </div>
+          <div className="bg-white dark:bg-gray-800 p-4 rounded shadow flex-1 text-center">
+            Avg: {analytics.avg_score}%
+          </div>
+          <div className="bg-white dark:bg-gray-800 p-4 rounded shadow flex-1 text-center">
+            Top: {analytics.top_score}%
+          </div>
         </div>
       )}
 
-      {/* No results */}
-      {filteredData.length === 0 && <p>No matching candidates</p>}
 
-      {/* LIST */}
+      {/* CANDIDATES */}
       {[...filteredData].sort((a, b) => b.score - a.score).map((c, i) => (
-        <div key={c._id} style={{ background: "#fff", padding: "15px", margin: "10px", borderRadius: "10px" }}>
+        <div key={c._id} className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow mb-4 border dark:border-gray-700">
 
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <b>Rank #{i + 1}</b>
-
+          {/* HEADER */}
+          <div className="flex justify-between">
             <div>
+              <p className="text-sm text-gray-500">Rank #{i + 1}</p>
+              <h3 className="font-semibold">{c.filename}</h3>
+            </div>
+            <div className="flex gap-2">
               <button onClick={() => handleShortlist(c._id)}>
                 {c.shortlisted ? "⭐" : "☆"}
               </button>
-
-              <button onClick={() => handleDeleteOne(c._id)}>
-                🗑
-              </button>
+              <button onClick={() => handleDeleteOne(c._id)}>🗑</button>
             </div>
           </div>
 
-          <h3>{c.filename}</h3>
-          <p>Score: {c.score}%</p>
+          {/* SCORE */}
+          <p className="mt-2 font-medium">Score: {c.score}%</p>
+          <div className="bg-gray-200 dark:bg-gray-700 h-2 rounded mt-1">
+            <div className="bg-green-500 h-2 rounded" style={{ width: `${c.score}%` }}></div>
+          </div>
 
-          <p><b>Skills:</b></p>
-          {c.skills?.map((s, idx) => <span key={idx}>{s} </span>)}
+          {/* SKILLS */}
+          <div className="mt-3">
+        <p className="font-semibold">Skills</p>
 
-          {c.missing_skills?.length > 0 && (
-            <>
-              <p style={{ color: "red" }}><b>Missing:</b></p>
-              {c.missing_skills.map((s, idx) => <span key={idx}>{s} </span>)}
-            </>
-          )}
+        {c.skills && c.skills.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {c.skills.map((s, idx) => (
+              <span
+                key={idx}
+                className="bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded text-sm"
+              >
+                {s}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-gray-500 text-sm italic">
+            No skills detected
+          </p>
+        )}
+      </div>
 
-          {c.feedback && (
-            <>
-              <p style={{ color: "green" }}><b>Matched:</b></p>
-              {c.feedback.matched_skills?.map((s, idx) => <span key={idx}>{s} </span>)}
+          <div className="mt-4 space-y-3">
 
-              <p style={{ color: "blue" }}><b>Suggestions:</b></p>
-              <ul>
-                {c.feedback.suggestions?.map((s, idx) => <li key={idx}>{s}</li>)}
-              </ul>
-            </>
-          )}
+  {/* 🚨 Missing Skills */}
+  {c.missing_skills?.length > 0 && (
+    <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 p-3 rounded-lg">
+      <p className="text-red-600 dark:text-red-300 font-semibold mb-2">
+        🚨 Missing Skills
+      </p>
+
+      <div className="flex flex-wrap gap-2">
+        {c.missing_skills.map((s, idx) => (
+          <span
+            key={idx}
+            className="bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-200 px-2 py-1 rounded text-sm"
+          >
+            {s}
+          </span>
+        ))}
+      </div>
+    </div>
+  )}
+
+  {/* ✅ Matched Skills */}
+  {c.feedback?.matched_skills?.length > 0 && (
+    <div className="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 p-3 rounded-lg">
+      <p className="text-green-600 dark:text-green-300 font-semibold mb-2">
+        ✅ Matched Skills
+      </p>
+
+      <div className="flex flex-wrap gap-2">
+        {c.feedback.matched_skills.map((s, idx) => (
+          <span
+            key={idx}
+            className="bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-200 px-2 py-1 rounded text-sm"
+          >
+            {s}
+          </span>
+        ))}
+      </div>
+    </div>
+  )}
+
+  {/* 💡 Suggestions */}
+  {c.feedback?.suggestions?.length > 0 && (
+    <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 p-3 rounded-lg">
+      <p className="text-blue-600 dark:text-blue-300 font-semibold mb-2">
+        💡 Suggestions
+      </p>
+
+      <ul className="list-disc ml-5 text-sm space-y-1">
+        {c.feedback.suggestions.map((s, idx) => (
+          <li key={idx}>{s}</li>
+        ))}
+      </ul>
+    </div>
+  )}
+
+</div>
 
         </div>
       ))}

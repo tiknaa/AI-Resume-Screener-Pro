@@ -6,12 +6,13 @@ import asyncio
 from model.bert_model import model  # import model
 
 from database import collection
-from utils.parser import extract_text
+from utils.parser import extract_text_from_pdf
 from utils.preprocess import clean_text
 from model.bert_model import compute_similarity
 from utils.skill_engine import extract_skills_semantic, get_missing_skills
 
 from fastapi.middleware.cors import CORSMiddleware
+
 
 app = FastAPI()
 
@@ -25,31 +26,35 @@ app.add_middleware(
 )
 
 async def process_file(file, job_embedding, job_desc, job_skills):
-    # skip non-pdf
     if not file.filename.lower().endswith(".pdf"):
         return None
 
+    loop = asyncio.get_running_loop()
+
     try:
-        text = extract_text(file.file)
+        file.file.seek(0)
+
+        # 🚀 Run PDF extraction in thread
+        file_bytes = file.file.read()
+        file.file.seek(0)
+
+        text = await loop.run_in_executor(
+            None, lambda: extract_text_from_pdf(file_bytes)
+        )
+
     except Exception:
         return None
 
-    clean_resume = clean_text(text)
+    clean_resume = clean_text(text)[:2000]
 
-    # 🚀 limit text (performance boost)
-    clean_resume = clean_resume[:2000]
-    
-
-    loop = asyncio.get_running_loop()
-
+    # 🚀 Run similarity in thread
     score = await loop.run_in_executor(
         None, compute_similarity, clean_resume, job_embedding
     )
 
+    # 🔥 Skill extraction (lightweight, keep normal)
     resume_skills = extract_skills_semantic(clean_resume)
-
     missing_skills = get_missing_skills(resume_skills, job_skills)
-
     matched_skills = list(set(resume_skills) & set(job_skills))
 
     suggestions = []
@@ -67,15 +72,14 @@ async def process_file(file, job_embedding, job_desc, job_skills):
         "suggestions": suggestions
     }
 
-    # score calculation
-    if len(job_skills) == 0:
-        skill_match_ratio = 0
-    else:
-        skill_match_ratio = len(set(resume_skills) & set(job_skills)) / len(job_skills)
+    skill_match_ratio = (
+        len(set(resume_skills) & set(job_skills)) / len(job_skills)
+        if job_skills else 0
+    )
 
     final_score = round((0.7 * score) + (0.3 * skill_match_ratio * 100), 2)
 
-    data = {
+    return {
         "filename": file.filename,
         "score": final_score,
         "skills": resume_skills,
@@ -85,8 +89,6 @@ async def process_file(file, job_embedding, job_desc, job_skills):
         "feedback": feedback,
         "shortlisted": False
     }
-
-    return data
 
 # ------------------------------
 # 📤 UPLOAD RESUME
@@ -99,27 +101,35 @@ async def upload_resume(
     if not job_desc.strip():
         raise HTTPException(status_code=400, detail="Job description is required")
 
-    # ✅ process JD once
-    clean_job = clean_text(job_desc)
-    clean_job = clean_job[:2000]
-    job_embedding = model.encode(clean_job, convert_to_tensor=True)
+    if len(files) > 30:
+        raise HTTPException(status_code=400, detail="Max 15 files allowed")
+
+    semaphore = asyncio.Semaphore(5)
+
+    clean_job = clean_text(job_desc)[:2000]
+    job_embedding = model.encode(clean_job)
     job_skills = extract_skills_semantic(job_desc)
 
-    # 🚀 parallel processing
-    tasks = [process_file(file, job_embedding, job_desc, job_skills) for file in files]
+    async def limited_process(file):
+        async with semaphore:
+            return await process_file(file, job_embedding, job_desc, job_skills)
 
+    tasks = [limited_process(file) for file in files]
     results = await asyncio.gather(*tasks)
 
-    # remove None values (invalid files)
     results = [r for r in results if r is not None]
 
-    for data in results:
-        result = collection.insert_one(data)
-        data["_id"] = str(result.inserted_id)
+    if not results:
+        raise HTTPException(status_code=400, detail="No valid PDF files uploaded")
+    
+    collection.delete_many({})
+
+    insert_result = collection.insert_many(results)
+
+    for i, doc_id in enumerate(insert_result.inserted_ids):
+        results[i]["_id"] = str(doc_id)
 
     return results
-    
-
 
 # ------------------------------
 # 📥 GET ALL CANDIDATES
