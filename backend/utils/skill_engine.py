@@ -1,3 +1,4 @@
+import re
 from sentence_transformers import SentenceTransformer, util
 
 model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -23,8 +24,14 @@ SKILL_DB = [
     "git", "docker", "jupyter", "colab",
 
     # Web
-    "frontend", "backend", "react", "node", "full stack"
+    "frontend", "backend", "react", "node", "full stack", "html",
+    "html5", "css", "css3", "spring", "spring mvc", "orm","wicket", "gwt","testing", "automation", "networking"
 ]
+# 🔥 Precompute skill embeddings (performance optimization)
+SKILL_EMBEDDINGS = {
+    skill: model.encode(skill, convert_to_tensor=True)
+    for skill in SKILL_DB
+}
 
 # 🔥 Skill mapping (important)
 SKILL_MAP = {
@@ -50,24 +57,24 @@ def normalize_skills(skills):
 def extract_skills_semantic(text):
     text = text.lower()
 
-    found_skills = []
+    found_skills = set()
 
     # 🔥 Direct keyword match FIRST (fast & accurate)
     for skill in SKILL_DB:
-        if skill in text:
-            found_skills.append(skill)
+        if re.search(rf"\b{re.escape(skill)}\b", text):
+            found_skills.add(skill)
 
     # 🔥 Then BERT (for semantic understanding)
     text_embedding = model.encode(text, convert_to_tensor=True)
 
     for skill in SKILL_DB:
-        skill_embedding = model.encode(skill, convert_to_tensor=True)
-        score = util.cos_sim(text_embedding, skill_embedding)
+        skill_embedding = SKILL_EMBEDDINGS[skill]
+        score = util.cos_sim(text_embedding, skill_embedding).item()
 
-        if score > 0.3:
-            found_skills.append(skill)
+        if score > 0.45:
+            found_skills.add(skill)
 
-    return list(set(found_skills))
+    return sorted(list(found_skills))
 
 # 🔥 Find missing skills intelligently
 def get_missing_skills(resume_skills, job_skills):
@@ -80,10 +87,22 @@ def get_missing_skills(resume_skills, job_skills):
         matched = False
 
         for res_skill in resume_skills:
-            emb1 = model.encode(job_skill, convert_to_tensor=True)
-            emb2 = model.encode(res_skill, convert_to_tensor=True)
+            if job_skill not in SKILL_EMBEDDINGS:
+                SKILL_EMBEDDINGS[job_skill] = model.encode(
+                    job_skill,
+                    convert_to_tensor=True
+                )
 
-            score = util.cos_sim(emb1, emb2)
+            if res_skill not in SKILL_EMBEDDINGS:
+                SKILL_EMBEDDINGS[res_skill] = model.encode(
+                    res_skill,
+                    convert_to_tensor=True
+                )
+
+            emb1 = SKILL_EMBEDDINGS[job_skill]
+            emb2 = SKILL_EMBEDDINGS[res_skill]
+
+            score = util.cos_sim(emb1, emb2).item()
 
             if score > 0.6:  # semantic match threshold
                 matched = True

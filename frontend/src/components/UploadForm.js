@@ -1,11 +1,23 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import axios from "axios";
 
 function UploadForm({ refresh }) {
   const [files, setFiles] = useState([]);
   const [jobDesc, setJobDesc] = useState("");
-  const [loading, setLoading] = useState(false);
   const fileInputRef = useRef(null);
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState("idle"); // idle | processing | completed
+  const [pollId, setPollId] = useState(null);
+  const [total, setTotal] = useState(0);
+  const [processed, setProcessed] = useState(0);
+
+  useEffect(() => {
+  return () => {
+    if (pollId) {
+      clearInterval(pollId);
+      }
+    };
+  }, [pollId]);
 
   // 📤 Upload handler
   const handleUpload = async () => {
@@ -14,7 +26,7 @@ function UploadForm({ refresh }) {
       alert("Please upload file(s) and enter job description");
       return;
     }
-    setLoading(true);
+    
     const formData = new FormData();
 
     files.forEach((file) => {
@@ -28,14 +40,31 @@ function UploadForm({ refresh }) {
       "http://127.0.0.1:8000/upload",
       formData
     );
+      setStatus("processing");
+      setProgress(0);
+
+      const id = setInterval(async () => {
+      const res = await axios.get("http://127.0.0.1:8000/progress");
+
+      const { total, processed, status } = res.data;
+      if (total > 0) {
+        setProgress(Math.round((processed / total) * 100));
+      }
+      setTotal(total);
+      setProcessed(processed);
+      setStatus(status);
+
+      if (status === "completed") {
+        clearInterval(id);
+        refresh();
+      }
+
+    }, 1000);
+    setPollId(id);
 
       console.log("UPLOAD RESPONSE:", res.data);
 
-      if (Array.isArray(res.data)) {
-        alert(`Uploaded ${res.data.length} resumes successfully!`);
-      } else {
-        alert("Upload successful!");
-      }
+      alert("Processing started! Please wait...");
 
       setFiles([]); // 🔥 clear after upload
       setJobDesc("");
@@ -47,9 +76,6 @@ function UploadForm({ refresh }) {
       console.log("RESPONSE:", error.response);
       alert("Error uploading resume");
     }
-    finally {
-      setLoading(false);
-    }
 
   };
 
@@ -57,6 +83,7 @@ function UploadForm({ refresh }) {
   const removeFile = (index) => {
     setFiles(files.filter((_, i) => i !== index));
   };
+
 
   return (
   <div className="bg-white p-6 rounded-2xl shadow-md mb-6 border border-gray-100">
@@ -98,6 +125,50 @@ function UploadForm({ refresh }) {
     <h2 className="text-xl font-semibold mb-4 text-gray-800">
       📤 Upload Resumes
     </h2>
+    {status === "processing" && (
+  <div className="mt-5">
+    
+    {/* HEADER */}
+    <div className="flex justify-between text-sm mb-1">
+      <span className="text-gray-700 dark:text-gray-300 font-medium">
+        🚀 Processing resumes...
+      </span>
+      <span className="font-semibold text-blue-600">
+        {progress}%
+      </span>
+    </div>
+
+    {/* PROGRESS BAR */}
+    <div className="w-full bg-gray-200 dark:bg-gray-700 h-4 rounded-full overflow-hidden shadow-inner">
+      <div
+        className="h-4 rounded-full transition-all duration-500"
+        style={{
+          width: `${progress}%`,
+          background: "linear-gradient(90deg, #3b82f6, #06b6d4, #22c55e)",
+          boxShadow: "0 0 10px rgba(59,130,246,0.6)"
+        }}
+      ></div>
+    </div>
+
+    {/* FOOTER */}
+    <p className="text-xs text-gray-500 mt-2">
+      AI is analyzing resumes...
+    </p>
+    <p className="text-xs text-gray-500 mt-1">
+      {processed === total && total > 0
+        ? "All resumes processed ✅"
+        : `${processed} / ${total} resumes processed`}
+    </p>
+
+  </div>
+)}
+
+{status === "completed" && (
+  <div className="mt-5 text-green-600 font-semibold">
+    ✅ Processing complete!
+  </div>
+)}
+
 
     <div className="space-y-4">
 
@@ -106,7 +177,7 @@ function UploadForm({ refresh }) {
         ref={fileInputRef}
         type="file"
         multiple
-        disabled={loading}
+        disabled={status === "processing"}
         onChange={(e) => {
           const newFiles = Array.from(e.target.files);
           const uniqueFiles = newFiles.filter(
@@ -134,9 +205,9 @@ function UploadForm({ refresh }) {
 
             <button
               onClick={() => removeFile(index)}
-              disabled={loading}
+              disabled={status === "processing"}
               className={`px-2 py-1 text-xs rounded text-white ${
-                loading
+                status === "processing"
                   ? "bg-red-300 cursor-not-allowed"
                   : "bg-red-500 hover:bg-red-600"
               }`}
@@ -152,29 +223,22 @@ function UploadForm({ refresh }) {
         placeholder="Enter job description..."
         rows="4"
         value={jobDesc}
-        disabled={loading}
+        disabled={status === "processing"}
         onChange={(e) => setJobDesc(e.target.value)}
         className="w-full border border-gray-300 p-3 rounded-lg"
       />
 
-      {/* Loading */}
-      {loading && (
-      <div className="text-blue-500 font-medium mt-2">
-        ⏳ Processing resumes... Please wait (large uploads may take time)
-      </div>
-    )}
-
       {/* Upload Button */}
       <button
         onClick={handleUpload}
-        disabled={loading}
+        disabled={status === "processing"}
         className={`w-full py-2 rounded-lg text-white font-semibold transition ${
-          loading
+          status === "processing"
             ? "bg-blue-400 cursor-not-allowed"
             : "bg-blue-600 hover:bg-blue-700"
         }`}
       >
-        {loading ? "Processing..." : "Upload Resumes"}
+        {status === "processing" ? "Processing..." : "Upload Resumes"}
       </button>
 
     </div>

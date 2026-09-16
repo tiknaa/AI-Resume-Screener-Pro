@@ -6,24 +6,27 @@ import Sidebar from "./components/Sidebar";
 import UploadForm from "./components/UploadForm";
 import Dashboard from "./components/Dashboard";
 import Analytics from "./components/Analytics";
+import ResumeBuilder from "./components/ResumeBuilder";
+import { useCallback } from "react";
 
 function App() {
   const [data, setData] = useState([]);
   const [darkMode, setDarkMode] = useState(false);
 
   // 🔁 Fetch candidates
-  const fetchCandidates = async () => {
+  const fetchCandidates = useCallback(async () => {
     try {
       const res = await axios.get("http://127.0.0.1:8000/candidates");
       setData(res.data);
     } catch (error) {
       console.error(error);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchCandidates();
-  }, []);
+  }, [fetchCandidates]);
+
 
   // 🌙 Load saved theme
   useEffect(() => {
@@ -54,7 +57,7 @@ function App() {
         <Sidebar />
 
         {/* Main Content */}
-        <div className="flex-1 min-h-screen bg-gray-100 dark:bg-gray-900 p-6">
+        <div className="ml-64 flex-1 min-h-screen bg-gray-100 dark:bg-gray-900 p-6">
 
           {/* Header */}
           <div className="flex justify-between items-center mb-6">
@@ -79,11 +82,15 @@ function App() {
             />
             <Route
               path="/dashboard"
-              element={<Dashboard data={data} refresh={fetchCandidates} />}
+              element={<Dashboard data={data} fetchCandidates={fetchCandidates} />}
             />
             <Route
               path="/analytics"
-              element={<Analytics data={data} refresh={fetchCandidates} />}
+              element={<Analytics data={data} fetchCandidates={fetchCandidates} />}
+            />
+            <Route
+              path="/resume-builder"
+              element={<ResumeBuilder />}
             />
           </Routes>
 

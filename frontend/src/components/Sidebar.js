@@ -7,10 +7,11 @@ function Sidebar() {
     { name: "Upload", path: "/" },
     { name: "Dashboard", path: "/dashboard" },
     { name: "Analytics", path: "/analytics" },
+    { name: "Resume Builder", path: "/resume-builder" }
   ];
 
   return (
-    <div className="w-64 bg-gray-900 text-white min-h-screen p-5">
+    <div className="fixed top-0 left-0 w-64 h-screen bg-gray-900 text-white p-5 overflow-y-auto">
       <h2 className="text-xl font-bold mb-6">🤖 AI Screener</h2>
 
       <ul className="space-y-3">
